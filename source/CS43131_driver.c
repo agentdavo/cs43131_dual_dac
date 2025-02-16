@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "board.h"
 #include "fsl_i2c.h"
+#include <string.h>  // Added include for memset
 
 #define CS43131_ADDR0                0x30
 #define CS43131_ADDR1                0x40
@@ -25,13 +26,9 @@ uint32_t write_i2c_data(uint8_t * data, uint8_t len)
         }
     }    
 
-
     /* Send master blocking data to slave */
     if (kStatus_Success == I2C_MasterStart(I2C1, CS43131_ADDR0, kI2C_Write))
     {
-        /* subAddress = 0x01, data = g_master_txBuff - write to slave.
-          start + slaveaddress(w) + subAddress + length of data buffer + data buffer + stop*/
-        
         if(kStatus_Success != I2C_MasterWriteBlocking(I2C1, buffer, len, kI2C_TransferDefaultFlag))
         {
             return -1;
@@ -48,14 +45,8 @@ uint32_t write_i2c_data(uint8_t * data, uint8_t len)
 
 
 /** function to read I2C bytes from the device with address set in SLAVE_DEVICE_ADDR constant **/
-/** Parameters:
-        rec_data -> array which will hold bytes received via I2C
-        len      -> length/number of bytes to be received
-**/
 uint32_t read_i2c_data(uint8_t *command, uint8_t * rec_data, uint8_t len)
 {
-
-
     if (kStatus_Success == I2C_MasterStart(I2C1, CS43131_ADDR0, kI2C_Write))
     {
         if (kStatus_Success != I2C_MasterWriteBlocking(I2C1, command, 4, kI2C_TransferNoStopFlag))
@@ -63,27 +54,24 @@ uint32_t read_i2c_data(uint8_t *command, uint8_t * rec_data, uint8_t len)
             return -1;
         }
 
-        if (kStatus_Success !=  I2C_MasterRepeatedStart(I2C1, CS43131_ADDR0, kI2C_Read))
+        if (kStatus_Success != I2C_MasterRepeatedStart(I2C1, CS43131_ADDR0, kI2C_Read))
         {
             return -1;
         }
 
-        
         if (kStatus_Success != I2C_MasterReadBlocking(I2C1, rec_data, len, kI2C_TransferDefaultFlag))
         {
             return -1;
         }
 
-        
         if (kStatus_Success != I2C_MasterStop(I2C1))
         {
             return -1;
         }
     }
-
-
     return 0;
 }
+
 
 /**************************************** Code for DAC Functions **********************************************/
 
@@ -91,24 +79,22 @@ uint32_t read_i2c_data(uint8_t *command, uint8_t * rec_data, uint8_t len)
 uint8_t CS43131_Read(uint32_t reg) {
     uint8_t tx_payload[4];
     uint8_t rx_val; 
-    tx_payload[0] = (reg >> 16) & 0xff;                         // Register address
+    tx_payload[0] = (reg >> 16) & 0xff;    // Register address MSB
     tx_payload[1] = (reg >> 8) & 0xff;
     tx_payload[2] = (reg) & 0xff;
-    tx_payload[3] = 0x00;                                       // Control byte
-    // write_i2c_data(tx_payload, 4);                           //write the register from which data need to be read
-    read_i2c_data(tx_payload,&rx_val, 1);
+    tx_payload[3] = 0x00;                  // Control byte
+    read_i2c_data(tx_payload, &rx_val, 1);
     return rx_val;
 }
 
 void CS43131_Write(uint32_t reg, uint8_t val) {
     uint8_t tx_payload[5];
-    tx_payload[0] = (reg >> 16) & 0xff;                         // Register address
+    tx_payload[0] = (reg >> 16) & 0xff;    // Register address MSB
     tx_payload[1] = (reg >> 8) & 0xff;
     tx_payload[2] = (reg) & 0xff;
-    tx_payload[3] = 0x00;                                       // Control byte
-    tx_payload[4] = val;                                        // Register value
+    tx_payload[3] = 0x00;                  // Control byte
+    tx_payload[4] = val;                   // Register value
     write_i2c_data(tx_payload, 5);
-    
 }
 
 void CS43131_PCM_PowerUp() {
@@ -286,21 +272,21 @@ void CS43131_Init() {
     CS43131_PCM_PowerUp();
 }
 
-void CS43131_HostUpdate()
+void CS43131_HostUpdate(void)
 {
     uint8_t buffer[5];
-    uint32_t reg=0;
+    uint32_t reg = 0;
     uint8_t val = 0;
+    
     memset(buffer, 0, sizeof(buffer));
 
-    /* Start accepting I2C transfers on the I2C slave peripheral */
-    
-    if (kStatus_Success != I2C_SlaveReadBlocking(I2C0, buffer, 5))
+    /* Wait for an I2C transfer from the host on the I2C slave peripheral */
+    if (kStatus_Success == I2C_SlaveReadBlocking(I2C0, buffer, 5))
     {
+        // Buffer layout: [Reg MSB, Reg Mid, Reg LSB, Control, Value]
+        reg = (buffer[0] << 16) | (buffer[1] << 8) | buffer[2];
         val = buffer[4];
-        reg = (buffer[0] << (8 * 2)) | (buffer[1] << (8*1)) | (buffer[2] <<(8*0));
         CS43131_Write(reg, val);
     }
-
 }
 
