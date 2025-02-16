@@ -3,6 +3,7 @@
  * @brief   Application entry point.
  */
 #include <stdio.h>
+#include <string.h>  // Added for memset
 #include "board.h"
 #include "peripherals.h"
 #include "pin_mux.h"
@@ -25,12 +26,11 @@
 #define I2C_SLAVE_CLOCK_FREQUENCY   (12000000)
 #define EXAMPLE_I2C_SLAVE           ((I2C_Type *)EXAMPLE_I2C_SLAVE_BASE)
 
-
 #define I2C_MASTER_SLAVE_ADDR_7BIT  0x7EU
 #define I2C_BAUDRATE                100000U
 #define I2C_DATA_LENGTH             33U
 
- /*******************************************************************************
+/*******************************************************************************
  * Prototypes
  ******************************************************************************/
 
@@ -42,7 +42,6 @@ uint8_t g_master_rxBuff[I2C_DATA_LENGTH];
 
 /*******************************************************************************
  * Code
-
  ******************************************************************************/
 
 /*
@@ -50,13 +49,11 @@ uint8_t g_master_rxBuff[I2C_DATA_LENGTH];
  */
 int main(void) {
 	
-	i2c_master_config_t masterConfig;
+    i2c_master_config_t masterConfig;
     i2c_slave_config_t slaveConfig;
 
-    /* Select the main clock as source clock of I2C0. */
+    /* Select the main clock as source clock of I2C0 and I2C1. */
     CLOCK_Select(kI2C0_Clk_From_MainClk);
-	
-	/* Select the main clock as source clock of I2C1. */
     CLOCK_Select(kI2C1_Clk_From_MainClk);
 
     /* Init board hardware. */
@@ -69,51 +66,23 @@ int main(void) {
 
     PRINTF("Hello World\n");
 
-    /*First Requirement 
-    1). boot using sample code config / data structure to each CS43131 on the I2C1 bus
-    */
-
-    /*
-     * masterConfig.debugEnable = false;
-     * masterConfig.ignoreAck = false;
-     * masterConfig.pinConfig = kI2C_2PinOpenDrain;
-     * masterConfig.baudRate_Bps = 100000U;
-     * masterConfig.busIdleTimeout_ns = 0;
-     * masterConfig.pinLowTimeout_ns = 0;
-     * masterConfig.sdaGlitchFilterWidth_ns = 0;
-     * masterConfig.sclGlitchFilterWidth_ns = 0;
-     */
+    /* I2C Master configuration for CS43131 communication */
     I2C_MasterGetDefaultConfig(&masterConfig);
-
-    /* Change the default baud rate configuration */
     masterConfig.baudRate_Bps = I2C_BAUDRATE;
-
-    /* Initialize the I2C master peripheral */
     I2C_MasterInit(EXAMPLE_I2C_MASTER, &masterConfig, I2C_MASTER_CLOCK_FREQUENCY);
 
     CS43131_Init();
 
-    /*Second Requirement 
-    2). add method to update settings from host mcu through I2C0 bus
-    */
-	
-    /* Set up i2c slave first*/
+    /* I2C Slave configuration to accept host updates */
     I2C_SlaveGetDefaultConfig(&slaveConfig);
-
-    /* Change the slave address */
     slaveConfig.address0.address = I2C_MASTER_SLAVE_ADDR_7BIT;
-
-    /* Initialize the I2C slave peripheral */
     I2C_SlaveInit(EXAMPLE_I2C_SLAVE, &slaveConfig, I2C_SLAVE_CLOCK_FREQUENCY);
 
-    CS43131_HostUpdate();
-
-    volatile static int i = 0 ;
+    /* Enter main loop and continuously check for host updates */
     while(1) {
-        i++ ;
-        /* 'Dummy' NOP to allow source level single stepping of
-            tight while() loop */
+        CS43131_HostUpdate();
         __asm volatile ("nop");
     }
-    return 0 ;
+
+    return 0;
 }
